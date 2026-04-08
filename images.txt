@@ -1,5 +1,3 @@
 deluan/navidrome:latest
 hanxi/xiaomusic:latest
 ghcr.io/xcq0607/lxserver:latest
-ollama/ollama:latest
-ghcr.io/open-webui/open-webui:main
