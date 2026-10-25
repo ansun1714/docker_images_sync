@@ -19,41 +19,49 @@ command -v skopeo >/dev/null || {
   sudo apt-get update -qq && sudo apt-get install -y -qq skopeo
 }
 
-# 只挑选真实的 linux 架构镜像，跳过 BuildKit 附带的 provenance/SBOM 证明清单
-pick_digests() {
-  local raw="$1" repo="$2" a d
-  for a in $ARCHS; do
-    d=$(echo "$raw" | jq -r --arg a "$a" \
-      '[.manifests[]? | select(.platform.os=="linux" and .platform.architecture==$a)][0].digest // empty')
-    if [ -n "$d" ]; then
-      echo "${repo}@${d}"
-    else
-      echo "    (源镜像没有 linux/$a，已跳过)" >&2
-    fi
-  done
+# 源镜像清单里是否有指定的 linux 架构
+has_platform() {
+  echo "$1" | jq -e --arg a "$2" \
+    '[.manifests[]? | select(.platform.os=="linux" and .platform.architecture==$a)] | length > 0' >/dev/null
 }
 
 sync_one() {
-  local src="$1" dst="$2" raw repo
+  local src="$1" dst="$2" raw dst_repo tag a df d
+  local digests=()
+
   raw=$(skopeo inspect --raw "docker://$src") || return 1
 
   # 单架构镜像：直接复制
   if ! echo "$raw" | jq -e '.manifests' >/dev/null 2>&1; then
     echo "    单架构镜像，直接复制"
-    skopeo copy --retry-times 3 "docker://$src" "docker://$dst"
-    return
+    skopeo copy --retry-times 3 "docker://$src" "docker://$dst" || return 1
+    return 0
   fi
 
-  if [[ "$src" == *@* ]]; then repo="${src%@*}"; else repo="${src%:*}"; fi
+  dst_repo="${dst%:*}"
+  tag="${dst##*:}"
+  df=$(mktemp)
 
-  local digests=()
-  while IFS= read -r line; do
-    [ -n "$line" ] && digests+=("$line")
-  done < <(pick_digests "$raw" "$repo")
+  # 逐个架构复制（只复制真实镜像，不带 BuildKit 的证明附件）
+  for a in $ARCHS; do
+    if ! has_platform "$raw" "$a"; then
+      echo "    (源镜像没有 linux/$a，已跳过)"
+      continue
+    fi
+    echo "    复制 linux/$a ..."
+    skopeo copy --retry-times 3 --override-os linux --override-arch "$a" \
+      --digestfile "$df" "docker://$src" "docker://${dst_repo}:${tag}-${a}" \
+      || { rm -f "$df"; return 1; }
+    d=$(cat "$df")
+    digests+=("${dst_repo}@${d}")
+  done
+  rm -f "$df"
 
   [ "${#digests[@]}" -gt 0 ] || { echo "    没有可同步的架构"; return 1; }
 
-  docker buildx imagetools create -t "$dst" "${digests[@]}"
+  # 在阿里云端把各架构合成一个多架构 tag
+  echo "    合成多架构清单 -> $dst"
+  docker buildx imagetools create -t "$dst" "${digests[@]}" || return 1
 }
 
 total=0; failed=0; failed_list=""
@@ -63,6 +71,7 @@ while IFS= read -r image || [ -n "$image" ]; do
   [[ -z "$image" || "$image" =~ ^# ]] && continue
   total=$((total + 1))
 
+  # 没写 tag 的补 :latest
   last="${image##*/}"
   [[ "$last" == *:* || "$last" == *@* ]] || image="${image}:latest"
 
