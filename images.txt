@@ -1,5 +1,9 @@
-jellyfin/jellyfin:latest
+deluan/navidrome:latest
 ghcr.io/xcq0607/lxserver:latest
-ollama/ollama:latest
-ghcr.io/open-webui/open-webui:main
-nousresearch/hermes-agent:latest
+cqshushu/iptv-spider:latest
+songloft/songloft:latest
+gdy666/lucky:v3
+iptvtop/uhdiptv
+openlistteam/openlist:latest
+ghcr.io/forget-c/jellyfish-front
+ghcr.io/forget-c/jellyfish-backend
