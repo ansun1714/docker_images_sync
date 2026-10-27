@@ -7,3 +7,4 @@ iptvtop/uhdiptv
 openlistteam/openlist:latest
 ghcr.io/forget-c/jellyfish-front
 ghcr.io/forget-c/jellyfish-backend
+linuxserver/transmission:arm64v8-4.1.3
